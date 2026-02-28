@@ -1,117 +1,51 @@
-# Hackathon-agentic-Healthcare
+# Medical Report Pipeline
 
-Agentic AI pipeline that ingests multi-source medical data (Excel timelines + DICOM images)
-and automatically generates structured radiology reports using Claude as the orchestration engine.
+A pipeline for generating structured radiology reports from DICOM scans and patient history. It combines deterministic image analysis with an optional LLM enrichment step to produce complete, traceable reports.
 
-## Quick start
+DICOM is mandatory — the pipeline refuses to run without it. Excel timelines are optional and only used for patient history, never as a source of lesion measurements.
+
+## Getting started
 
 ```bash
-# 1. Create and activate a virtual environment
 python -m venv .venv && source .venv/bin/activate
-
-# 2. Install dependencies
 pip install -e ".[dev]"
-
-# 3. Copy environment file and add your Anthropic key
-cp .env.example .env
-
-# 4. Start the API
-make dev          # FastAPI on http://localhost:8000
-make dashboard    # Streamlit dashboard
+cp .env.example .env          # add your ANTHROPIC_API_KEY here
 ```
 
----
-
-## Full pipeline (step by step)
-
-### Step 1 — Ingest Excel
-
-Parse a patient Excel file into a structured timeline JSON:
+## Run the full pipeline
 
 ```bash
-python -m src.pipelines.ingest_excel \
-    --excel   data/raw/case01.xlsx \
+python -m src.pipelines.run_case \
+    --dicom  data/raw/patient.dcm \
+    --excel  data/raw/history.xlsx \   # optional
+    --out    data/processed/CASE_01/ \
     --case-id CASE_01
-# → data/processed/CASE_01_timeline.json
-
-# Optional: explicit sheet name
-python -m src.pipelines.ingest_excel \
-    --excel   data/raw/case01.xlsx \
-    --case-id CASE_01 \
-    --sheet   "Sheet1"
 ```
 
-**Expected Excel columns** (fuzzy-matched, case-insensitive):
+This produces three files:
+- `analysis.json` — DICOM metadata, pixel stats, RECIST classification (schema-validated)
+- `timeline.json` — patient exam history from Excel (if provided)
+- `final_report.md` — the complete Markdown report
 
-| Column | Description |
-|--------|-------------|
-| `PatientID` | Anonymised patient identifier |
-| `AccessionNumber` | Study accession number (links to DICOM) |
-| `lesion size in mm` | Measurement(s) — single value, comma/newline-separated |
-| `Clinical information data / Pseudo reports` | Free-text report with section markers |
+If `ANTHROPIC_API_KEY` is set, the pipeline automatically adds a narrative enrichment step (technique description, preliminary findings, conclusions) using `claude-haiku-4-5`. If the key is absent or the API is unreachable, that step is skipped silently and the report still generates.
 
-**Output schema** (one object per exam row):
+## Individual pipeline steps
 
-```json
-{
-  "patient_id": "P001",
-  "accession_number": "ACC123",
-  "study_date": "2024-06-15",
-  "lesion_sizes_mm": [12.5, 14.3],
-  "report_raw": "CLINICAL INFORMATION. ...",
-  "report_sections": {
-    "clinical_information": "...",
-    "study_technique": "...",
-    "report": "...",
-    "conclusions": "..."
-  }
-}
-```
-
----
-
-### Step 2 — Compute analysis
-
-Deterministic RECIST-like analysis (no LLM):
-
+**DICOM analysis only:**
 ```bash
-python -m src.pipelines.compute_analysis \
-    --timeline data/processed/CASE_01_timeline.json
-# → data/processed/CASE_01_analysis.json
+python -m src.pipelines.dicom_analysis \
+    --dicom data/raw/patient.dcm \
+    --out   data/processed/analysis.json
 ```
 
-**Rules applied:**
-
-| Status | Criterion |
-|--------|-----------|
-| `progression` | Any lesion increases ≥ 20% **AND** ≥ 5 mm |
-| `response` | Any lesion decreases ≥ 30% |
-| `stable` | Neither of the above |
-| `unknown` | Fewer than two exams with measurements |
-
-**Output schema:**
-
-```json
-{
-  "overall_status": "progression",
-  "time_delta_days": 182,
-  "lesion_deltas": [
-    { "lesion_index": 0, "baseline_mm": 10.0, "last_mm": 16.0,
-      "delta_mm": 6.0, "delta_pct": 60.0, "status": "progression" }
-  ],
-  "evidence": {
-    "rule_applied": "progression: lesion(s) [0] increased >= 20.0% AND >= 5.0 mm",
-    "thresholds": { "progression_pct": 20.0, "progression_abs_mm": 5.0, "response_pct": 30.0 }
-  }
-}
+**Excel ingestion only:**
+```bash
+python -m src.pipelines.ingest_excel \
+    --excel   data/raw/history.xlsx \
+    --case-id CASE_01
 ```
 
----
-
-### Step 3 — Generate report
-
-Fill the Markdown template deterministically from timeline + analysis:
-
+**Report rendering only** (from existing JSON files):
 ```bash
 python -m src.pipelines.generate_report \
     --timeline data/processed/CASE_01_timeline.json \
@@ -119,87 +53,74 @@ python -m src.pipelines.generate_report \
     --out      data/processed/CASE_01_final_report.md
 ```
 
-Template: `src/reporting/templates/thorax_report.md` (Jinja2).
-No LLM is used — pure template filling.
-
----
-
-### Step 4 — DICOM enrichment (optional)
-
-Match exams to a local DICOM directory by `AccessionNumber`.
-Adds `study_instance_uid`, `series` list, `ct_series_uid`, `seg_series_uid` per exam.
-Metadata only — no pixel data loaded.
+## REST API
 
 ```bash
-python -m src.pipelines.ingest_dicom \
-    --timeline  data/processed/CASE_01_timeline.json \
-    --dicom-dir /path/to/dicom_root
-# → data/processed/CASE_01_timeline_enriched.json
+make dev   # starts FastAPI on http://localhost:8000
 ```
 
----
+Send a `multipart/form-data` POST to `/generate-report` with a `dicom_files` field (required) and optionally `excel_file` and `annotations_json`.
 
-## Report section markers (case-insensitive, trailing dot optional)
+Interactive docs: http://localhost:8000/docs
 
-```
-CLINICAL INFORMATION.
-STUDY TECHNIQUE.
-REPORT.
-CONCLUSIONS.
-```
+## How RECIST classification works
 
-Missing markers produce `null` for that section.
+The pipeline applies these rules deterministically — no model is involved in the decision:
 
----
+| Status | Rule |
+|--------|------|
+| `progression` | Any lesion grows ≥ 20% **and** ≥ 5 mm |
+| `response` | Any lesion shrinks ≥ 30% |
+| `stable` | Neither threshold reached |
+| `unknown` | Single scan — no comparison possible |
 
-## Project structure
+## Project layout
 
 ```
 src/
   pipelines/
-    parsers.py            # parse_lesion_sizes(), split_report_sections()
-    ingest_excel.py       # Step 1 — Excel → timeline JSON
-    compute_analysis.py   # Step 2 — deterministic RECIST-like analysis
-    generate_report.py    # Step 3 — Jinja2 template → Markdown report
-    ingest_dicom.py       # Step 4 — DICOM enrichment (optional)
-    dicom_utils.py        # low-level DICOM metadata helpers
+    dicom_analysis.py     # pixel_array stats + metadata extraction
+    llm_enrichment.py     # optional LLM narrative step (haiku, tool_use)
+    run_case.py           # full pipeline entrypoint
+    ingest_excel.py       # Excel → timeline JSON
+    compute_analysis.py   # RECIST-like analysis
+    generate_report.py    # Jinja2 template → Markdown
+  imaging/
+    dicom_utils.py        # pydicom helpers
+    orthanc_utils.py      # Orthanc HTTP API helpers
   agents/
-    orchestrator.py       # Claude tool-use agent loop (LLM layer, coming next)
+    orchestrator.py       # Claude agent loop
     tools/                # vision, timeline, report, viz tools
   app/
     main.py               # FastAPI application
-  reporting/
-    templates/
-      thorax_report.md    # Jinja2 report template
-    renderer.py           # Markdown / PDF renderer
 
 data/
-  raw/                    # input Excel files (git-ignored)
-  processed/              # output JSON + MD files (git-ignored)
-  schema/                 # column documentation
-  manifests/              # case manifest
+  schema/
+    analysis_schema.json  # JSON Schema (draft-07) for analysis.json
 
 tests/
-  test_parsers.py         # parse_lesion_sizes, split_report_sections
-  test_compute_analysis.py# deterministic rules + edge cases
-  test_generate_report.py # template rendering sanity
-  test_ingest_dicom.py    # DICOM utils with mocked datasets
+  test_e2e_pipeline.py    # 18 end-to-end tests
+  test_llm_enrichment.py  # 16 enrichment tests (fully mocked)
+  test_compute_analysis.py
+  test_generate_report.py
+  test_parsers.py
+  test_ingest_dicom.py
 ```
 
----
-
-## Running tests
+## Tests
 
 ```bash
-make test
-# or directly:
-python -m pytest tests/ -v
+make test          # runs all 195 tests
+pytest tests/ -v   # same with verbose output
 ```
 
----
+Everything runs without a network connection or API key. The LLM enrichment tests mock the Anthropic client entirely.
 
-## Docs
+## Environment variables
 
-- [Pitch](docs/pitch.md)
-- [Architecture](docs/architecture.md)
-- [Evaluation grid](docs/evaluation.md)
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | No | — | Enables LLM enrichment step |
+| `ORTHANC_URL` | No | `http://10.0.1.215:8042` | Orthanc DICOM server |
+| `ORTHANC_USER` | No | `unboxed` | Orthanc credentials |
+| `ORTHANC_PASS` | No | `unboxed2026` | Orthanc credentials |

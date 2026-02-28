@@ -1,6 +1,8 @@
-# --- Project-specific: never commit real patient data ---
+# --- Project-specific: never commit real patient data or internal docs ---
 data/raw/
 data/processed/
+docs/pitch.md
+docs/evaluation.md
 # Keep schema, manifests, and sample README tracked (but not sample data files)
 !data/schema/
 !data/manifests/

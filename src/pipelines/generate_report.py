@@ -101,11 +101,24 @@ def build_context(
         # ── DICOM analysis block (from dicom_analysis.py) ─────────────────
         "dicom_metadata":    (analysis.get("dicom") or {}).get("metadata"),
         "dicom_image_stats": (analysis.get("dicom") or {}).get("image_stats"),
-        # ── latest pseudo-report sections (from Excel if present) ─────────
-        "latest_clinical_information": _latest_section(timeline, "clinical_information"),
-        "latest_study_technique":      _latest_section(timeline, "study_technique"),
-        "latest_report":               _latest_section(timeline, "report"),
-        "latest_conclusions":          _latest_section(timeline, "conclusions"),
+        # ── latest pseudo-report sections ─────────────────────────────────
+        # Priority: Excel timeline > LLM enrichment > None (template shows "Non disponible")
+        "latest_clinical_information": (
+            _latest_section(timeline, "clinical_information")
+            or analysis.get("latest_clinical_information")
+        ),
+        "latest_study_technique": (
+            _latest_section(timeline, "study_technique")
+            or analysis.get("latest_study_technique")
+        ),
+        "latest_report": (
+            _latest_section(timeline, "report")
+            or analysis.get("latest_report")
+        ),
+        "latest_conclusions": (
+            _latest_section(timeline, "conclusions")
+            or analysis.get("latest_conclusions")
+        ),
         # ── KPIs (all keys always present; None when not computable) ──────
         "kpi": {
             "sum_diameters_baseline_mm":   analysis.get("kpi", {}).get("sum_diameters_baseline_mm"),

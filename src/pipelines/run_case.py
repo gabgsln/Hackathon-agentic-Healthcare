@@ -93,6 +93,18 @@ def run_case(
         logger.error(f"[run_case] Schema validation FAILED: {exc}")
         sys.exit(1)
 
+    # ── Step 3.5: LLM enrichment (optional — soft fail) ──────────────────────
+    logger.info("[run_case] Attempting LLM narrative enrichment …")
+    try:
+        from src.pipelines.llm_enrichment import enrich_analysis
+        analysis = enrich_analysis(analysis)
+        if analysis.get("llm_enriched"):
+            logger.info("[run_case] LLM enrichment applied")
+        else:
+            logger.info("[run_case] LLM enrichment skipped (no API key or unavailable)")
+    except Exception as exc:
+        logger.warning(f"[run_case] LLM enrichment failed (non-fatal): {exc}")
+
     # ── Step 4: Write analysis.json ───────────────────────────────────────────
     analysis_path = out_dir / "analysis.json"
     analysis_path.write_text(
