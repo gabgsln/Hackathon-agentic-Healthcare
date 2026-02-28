@@ -34,6 +34,8 @@ import numpy as np
 
 _SCHEMA_PATH = Path(__file__).parent.parent.parent / "data" / "schema" / "analysis_schema.json"
 
+PIPELINE_VERSION: str = "0.2.0"
+
 _PROGRESSION_PCT: float = 20.0
 _PROGRESSION_ABS: float = 5.0
 _RESPONSE_PCT:    float = 30.0
@@ -434,6 +436,7 @@ def _build_analysis_dict(
     status_explanation: str,
 ) -> dict[str, Any]:
     return {
+        "pipeline_version":   PIPELINE_VERSION,
         "case_id":            case_id,
         "patient_id":         metadata.get("PatientID", ""),
         "overall_status":     "unknown",

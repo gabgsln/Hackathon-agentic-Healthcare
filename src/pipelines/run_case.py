@@ -64,6 +64,11 @@ def _print_summary(
     completeness = kpi.get("data_completeness_score", "?")
     consist = stats.get("data_consistency_score", 0.0)
     print(f"  Consist.  : {consist:.2f}               Completeness : {completeness}%")
+    val = analysis.get("validation") or {}
+    if val:
+        conf  = f"{val.get('confidence_score', '?'):.2f}"
+        flags = ", ".join(val.get("anomaly_flags", [])) or "none"
+        print(f"  Confidence: {conf:<8}  Flags : {flags}")
     print(f"  LLM       : {'enriched' if analysis.get('llm_enriched') else 'skipped'}")
     print(f"  Timeline  : {len(timeline)} exam(s)" if timeline else "  Timeline  : none")
     print(sep)
@@ -140,6 +145,24 @@ def run_case(
             logger.info("[run_case] LLM enrichment skipped (no API key or unavailable)")
     except Exception as exc:
         logger.warning(f"[run_case] LLM enrichment failed (non-fatal): {exc}")
+
+    # ── Step 3.7: Clinical validation (optional — soft fail) ──────────────────
+    logger.info("[run_case] Attempting clinical consistency validation …")
+    try:
+        from src.pipelines.clinical_validation import validate_clinical
+        analysis = validate_clinical(analysis)
+        if analysis.get("validation"):
+            v = analysis["validation"]
+            logger.info(
+                f"[run_case] Clinical validation: "
+                f"confidence={v['confidence_score']:.2f} "
+                f"consistency={v['clinical_consistency_score']:.2f} "
+                f"flags={v['anomaly_flags']}"
+            )
+        else:
+            logger.info("[run_case] Clinical validation skipped (no API key or unavailable)")
+    except Exception as exc:
+        logger.warning(f"[run_case] Clinical validation failed (non-fatal): {exc}")
 
     # ── Step 4: Write analysis.json ───────────────────────────────────────────
     analysis_path = out_dir / "analysis.json"

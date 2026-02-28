@@ -6,6 +6,47 @@
   "required": ["case_id", "overall_status", "evidence", "kpi", "dicom"],
   "additionalProperties": true,
   "properties": {
+    "pipeline_version": {
+      "type": "string",
+      "description": "Semver string of the pipeline that produced this analysis."
+    },
+    "validation": {
+      "type": "object",
+      "description": "Clinical consistency validation block added by clinical_validation.py.",
+      "required": ["confidence_score", "clinical_consistency_score", "anomaly_flags", "validated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "confidence_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Overall pipeline confidence (1.0 = fully consistent)."
+        },
+        "clinical_consistency_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Medical consistency of modality, HU range, spacing, and status."
+        },
+        "anomaly_flags": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Snake-case codes for each detected anomaly or quality issue."
+        },
+        "validation_notes": {
+          "type": ["string", "null"],
+          "description": "One-sentence summary of the most critical finding."
+        },
+        "validated_at": {
+          "type": "string",
+          "description": "ISO-8601 UTC timestamp of when validation was run."
+        },
+        "model_used": {
+          "type": "string",
+          "description": "LLM model ID used for validation."
+        }
+      }
+    },
     "status_reason": {
       "type": "string",
       "enum": ["no_timeline", "insufficient_exams", "single_slice_limit", "computed"],
@@ -102,6 +143,7 @@
         "lesion_count_current":        { "type": "integer" },
         "lesion_count_delta":          { "type": "integer" },
         "growth_rate_mm_per_day":      { "type": ["number", "null"] },
+        "volume_mm3_if_available":     { "type": ["number", "null"] },
         "data_completeness_score": {
           "type": "number",
           "minimum": 0,

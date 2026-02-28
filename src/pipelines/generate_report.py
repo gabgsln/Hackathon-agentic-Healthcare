@@ -79,7 +79,9 @@ def build_context(
     return {
         # ── meta ──────────────────────────────────────────────────────────
         "generated_at":    datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "pipeline_version": PIPELINE_VERSION,
+        "pipeline_version": analysis.get("pipeline_version", PIPELINE_VERSION),
+        # ── clinical validation block (None when skipped) ─────────────────
+        "validation": analysis.get("validation"),
         # ── patient / exam summary ────────────────────────────────────────
         "patient_id":      analysis.get("patient_id", ""),
         "exam_count":      analysis.get("exam_count", len(timeline)),

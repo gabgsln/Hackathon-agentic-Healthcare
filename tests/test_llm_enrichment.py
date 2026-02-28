@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 
 _fake_anthropic = MagicMock(name="anthropic")
 sys.modules.setdefault("anthropic", _fake_anthropic)
+_fake_anthropic = sys.modules["anthropic"]  # always use whichever mock was installed first
 
 from src.pipelines.llm_enrichment import _PROTECTED_KEYS, enrich_analysis  # noqa: E402
 

@@ -102,6 +102,30 @@ Statut indéterminé — données insuffisantes pour évaluation comparative.
 | PixelSpacing (mm) | {% if calibration.pixel_spacing_mm %}{{ calibration.pixel_spacing_mm[0] }} × {{ calibration.pixel_spacing_mm[1] }}{% else %}Non disponible{% endif %} |
 | Score de complétude | {{ kpi.data_completeness_score }}% |
 
+{% if validation %}
+### Validation clinique automatisée
+
+| Indicateur | Score |
+|------------|-------|
+| Confiance globale (0–1) | **{{ "%.2f" | format(validation.confidence_score) }}** |
+| Cohérence clinique (0–1) | **{{ "%.2f" | format(validation.clinical_consistency_score) }}** |
+
+{% if validation.anomaly_flags -%}
+**Anomalies détectées :**
+{% for flag in validation.anomaly_flags -%}
+- ⚠️ `{{ flag }}`
+{% endfor %}
+{%- else %}
+✅ Aucune anomalie détectée.
+{%- endif %}
+
+{% if validation.validation_notes -%}
+*Note : {{ validation.validation_notes }}*
+{% endif -%}
+
+*Validé par `{{ validation.model_used }}` le {{ validation.validated_at[:10] }}*
+{% endif %}
+
 {% if warnings -%}
 ### Avertissements
 
