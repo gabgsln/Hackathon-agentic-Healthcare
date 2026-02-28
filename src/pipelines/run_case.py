@@ -5,20 +5,22 @@ Pipeline exits with non-zero status and a clear error message if DICOM is absent
 
 Steps:
     1. Validate DICOM exists              → exit(1) if missing
-    2. dicom_analysis.analyze_dicom()     → analysis dict
+    2. dicom_analysis.analyze_dicom()     → analysis dict (file OR folder)
     3. dicom_analysis.validate_analysis() → exit(1) if schema fails
+    3.5 llm_enrichment.enrich_analysis() → optional narrative text (soft fail)
     4. Write  {out}/analysis.json
-    5. ingest_excel() if --excel given    → timeline dict
-    6. Write  {out}/timeline.json         (only when --excel provided)
+    5. ingest_excel() if --excel/--xlsx given  → timeline dict
+    6. Write  {out}/timeline.json              (only when Excel provided)
     7. generate_report.render_report()    → Markdown string
     8. Write  {out}/final_report.md
+    9. Print  10-line case summary
 
 Usage:
     python -m src.pipelines.run_case \\
-        --dicom  data/raw/CASE_01/image.dcm \\
-        [--excel data/raw/CASE_01/data.xlsx] \\
+        --dicom  data/raw/CASE_01/          \\  # file OR folder of slices
+        [--xlsx  data/raw/CASE_01/data.xlsx] \\
         [--case-id CASE_01] \\
-        --out    data/processed/CASE_01/
+        [--out   data/processed/CASE_01/]
 """
 from __future__ import annotations
 
@@ -36,6 +38,35 @@ logger = logging.getLogger(__name__)
 # Core pipeline function (importable by tests)
 # ---------------------------------------------------------------------------
 
+def _print_summary(
+    analysis: dict[str, Any],
+    outputs: dict[str, Path],
+    timeline: list[dict[str, Any]],
+) -> None:
+    """Print a concise 10-line case summary to stdout."""
+    meta  = (analysis.get("dicom") or {}).get("metadata", {})
+    stats = (analysis.get("dicom") or {}).get("image_stats", {})
+    img   = analysis.get("imaging", {})
+    kpi   = analysis.get("kpi", {})
+    sep   = "─" * 58
+    print(sep)
+    print(f"  Case      : {analysis.get('case_id', '?'):<20}  Patient : {meta.get('PatientID', '?')}")
+    print(f"  Status    : {analysis.get('overall_status', '?').upper():<20}  Reason  : {analysis.get('status_reason', '?')}")
+    print(f"  Input     : {img.get('input_kind', '?'):<10}  Slices  : {img.get('n_slices', '?'):<6}  3D : {'Yes' if img.get('is_3d') else 'No'}")
+    modality   = meta.get("Modality")        or "?"
+    body_part  = meta.get("BodyPartExamined") or "?"
+    study_date = meta.get("StudyDate")        or "?"
+    print(f"  Modality  : {modality:<10}  Part    : {body_part:<10}  Date : {study_date}")
+    print(f"  HU range  : [{stats.get('min', '?')}, {stats.get('max', '?')}]   mean={stats.get('mean', '?')}  std={stats.get('std', '?')}")
+    print(f"  Consist.  : {stats.get('data_consistency_score', '?'):.2f}               Completeness : {kpi.get('data_completeness_score', '?')}%")
+    print(f"  LLM       : {'enriched' if analysis.get('llm_enriched') else 'skipped'}")
+    print(f"  Timeline  : {len(timeline)} exam(s)" if timeline else "  Timeline  : none")
+    print(sep)
+    for key, path in outputs.items():
+        print(f"    {key:<12} → {path}")
+    print(sep)
+
+
 def run_case(
     dicom_path: Path,
     out_dir: Path,
@@ -44,10 +75,10 @@ def run_case(
 ) -> dict[str, Path]:
     """Run the full deterministic case pipeline.
 
-    DICOM is MANDATORY.
+    DICOM is MANDATORY. Accepts a single .dcm file or a folder of DICOM slices.
 
     Args:
-        dicom_path: Path to a .dcm file.
+        dicom_path: Path to a .dcm file or a folder of DICOM slices.
         out_dir:    Directory where outputs are written.
         case_id:    Optional case identifier.
         excel_path: Optional Excel file (patient metadata only, no lesion sizes).
@@ -162,6 +193,7 @@ def run_case(
         f"[run_case] Pipeline complete for case '{cid}'. "
         f"Outputs: {list(outputs.values())}"
     )
+    _print_summary(analysis, outputs, timeline)
     return outputs
 
 
@@ -174,24 +206,30 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="python -m src.pipelines.run_case",
         description=(
             "Full case pipeline: DICOM → analysis.json → timeline.json → final_report.md\n"
-            "DICOM is REQUIRED — pipeline exits with status 1 if absent."
+            "DICOM (file or folder of slices) is REQUIRED — pipeline exits with status 1 if absent."
         ),
     )
     p.add_argument(
         "--dicom", required=True, type=Path,
-        help="Path to the patient's DICOM .dcm file (REQUIRED).",
+        help="Path to a .dcm file or a folder of DICOM slices (REQUIRED).",
     )
-    p.add_argument(
-        "--excel", default=None, type=Path,
+    # --excel and --xlsx are interchangeable
+    excel_group = p.add_mutually_exclusive_group()
+    excel_group.add_argument(
+        "--excel", default=None, type=Path, dest="excel",
         help="Path to an Excel file with patient metadata (optional; lesion sizes ignored).",
+    )
+    excel_group.add_argument(
+        "--xlsx", default=None, type=Path, dest="excel",
+        help="Alias for --excel.",
     )
     p.add_argument(
         "--case-id", default="", dest="case_id",
-        help="Case identifier (default: DICOM filename stem).",
+        help="Case identifier (default: DICOM file/folder name stem).",
     )
     p.add_argument(
-        "--out", required=True, type=Path,
-        help="Output directory where analysis.json, timeline.json, final_report.md are written.",
+        "--out", default=None, type=Path,
+        help="Output directory (default: data/processed/{case_id}/).",
     )
     return p
 
@@ -199,18 +237,24 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
 
+    dicom_path = Path(args.dicom)
+
     # Explicit DICOM check before delegating (gives a clean error in CLI context)
-    if not Path(args.dicom).exists():
+    if not dicom_path.exists():
         print(
-            f"ERROR: DICOM input is required — file not found: {args.dicom}",
+            f"ERROR: DICOM input is required — not found: {dicom_path}",
             file=sys.stderr,
         )
         sys.exit(1)
 
+    # Default out: data/processed/{stem}/
+    case_id = args.case_id or dicom_path.stem
+    out_dir = args.out or (Path("data") / "processed" / case_id)
+
     run_case(
-        dicom_path=args.dicom,
-        out_dir=args.out,
-        case_id=args.case_id,
+        dicom_path=dicom_path,
+        out_dir=out_dir,
+        case_id=case_id,
         excel_path=args.excel,
     )
 

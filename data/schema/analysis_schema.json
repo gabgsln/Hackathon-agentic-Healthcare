@@ -6,6 +6,49 @@
   "required": ["case_id", "overall_status", "evidence", "kpi", "dicom"],
   "additionalProperties": true,
   "properties": {
+    "status_reason": {
+      "type": "string",
+      "enum": ["no_timeline", "insufficient_exams", "single_slice_limit", "computed"],
+      "description": "Why overall_status has its current value."
+    },
+    "status_explanation": {
+      "type": "string",
+      "description": "Human-readable French explanation of the status reason."
+    },
+    "imaging": {
+      "type": "object",
+      "required": ["input_kind", "n_slices", "is_3d"],
+      "additionalProperties": true,
+      "description": "Describes the DICOM input geometry (single file vs. series folder).",
+      "properties": {
+        "input_kind": {
+          "type": "string",
+          "enum": ["single", "series"]
+        },
+        "n_slices": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "volume_shape": {
+          "type": "array",
+          "items": {"type": ["integer", "null"]},
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "spacing_mm": {
+          "type": "array",
+          "items": {"type": ["number", "null"]},
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "series_instance_uid": {"type": ["string", "null"]},
+        "sorting_key_used": {
+          "type": "string",
+          "enum": ["InstanceNumber", "ImagePositionPatient", "none"]
+        },
+        "is_3d": {"type": "boolean"}
+      }
+    },
     "case_id": {
       "type": "string",
       "minLength": 1,

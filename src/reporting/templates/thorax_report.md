@@ -34,6 +34,10 @@ Statut indéterminé — données insuffisantes pour évaluation comparative.
 
 *Règle appliquée : {{ evidence.rule_applied }}*
 
+{% if status_explanation -%}
+*{{ status_explanation }}*
+{% endif %}
+
 ---
 
 ## 3. Imaging Findings
@@ -66,6 +70,23 @@ Statut indéterminé — données insuffisantes pour évaluation comparative.
 | Écart-type | {{ dicom_image_stats.std }} |
 | Score de cohérence (0–1) | **{{ dicom_image_stats.data_consistency_score }}** |
 {% endif -%}
+
+### Acquisition volumique
+
+| Champ | Valeur |
+|-------|--------|
+| Type d'entrée | {{ "Fichier unique" if imaging.input_kind == "single" else "Série DICOM" }} |
+| Nombre de coupes | {{ imaging.n_slices }} |
+| Volume 3D | {{ "Oui" if imaging.is_3d else "Non" }} |
+{% if imaging.spacing_mm and imaging.spacing_mm | select | list -%}
+| Espacement z / y / x (mm) | {{ imaging.spacing_mm | map(attribute='__str__') | join(' / ') if false else (imaging.spacing_mm[0] | string + ' / ' + imaging.spacing_mm[1] | string + ' / ' + imaging.spacing_mm[2] | string) }} |
+{% endif -%}
+{% if imaging.sorting_key_used and imaging.sorting_key_used != "none" -%}
+| Tri des coupes par | {{ imaging.sorting_key_used }} |
+{% endif -%}
+{% if not imaging.is_3d %}
+> ⚠️ **Limitation** : un seul fichier DICOM reçu. Les statistiques pixel portent sur une coupe unique — aucune information volumique n'est disponible. Pour une analyse 3D complète, fournissez le dossier de la série.
+{% endif %}
 
 {%- else %}
 *Données DICOM non disponibles pour cet examen.*

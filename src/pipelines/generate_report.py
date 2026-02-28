@@ -119,6 +119,19 @@ def build_context(
             _latest_section(timeline, "conclusions")
             or analysis.get("latest_conclusions")
         ),
+        # ── DICOM input geometry ──────────────────────────────────────────
+        "imaging": analysis.get("imaging") or {
+            "input_kind": "single",
+            "n_slices": 1,
+            "volume_shape": [1, None, None],
+            "spacing_mm": [None, None, None],
+            "series_instance_uid": None,
+            "sorting_key_used": "none",
+            "is_3d": False,
+        },
+        # ── status gating ─────────────────────────────────────────────────
+        "status_reason":      analysis.get("status_reason", ""),
+        "status_explanation": analysis.get("status_explanation", ""),
         # ── KPIs (all keys always present; None when not computable) ──────
         "kpi": {
             "sum_diameters_baseline_mm":   analysis.get("kpi", {}).get("sum_diameters_baseline_mm"),

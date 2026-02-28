@@ -12,20 +12,32 @@ pip install -e ".[dev]"
 cp .env.example .env          # add your ANTHROPIC_API_KEY here
 ```
 
+## Quick demo
+
+No DICOM of your own? Use the CT slice that ships with pydicom:
+
+```bash
+make demo
+```
+
 ## Run the full pipeline
 
 ```bash
 python -m src.pipelines.run_case \
-    --dicom  data/raw/patient.dcm \
-    --excel  data/raw/history.xlsx \   # optional
-    --out    data/processed/CASE_01/ \
-    --case-id CASE_01
+    --dicom  data/raw/CASE_01/          \  # .dcm file OR folder of slices
+    --xlsx   data/raw/history.xlsx      \  # optional (--excel works too)
+    --case-id CASE_01                      # optional (default: folder/file name)
+    # --out defaults to data/processed/{case_id}/
 ```
 
 This produces three files:
-- `analysis.json` — DICOM metadata, pixel stats, RECIST classification (schema-validated)
+- `analysis.json` — DICOM metadata, pixel stats, imaging geometry, RECIST status (schema-validated)
 - `timeline.json` — patient exam history from Excel (if provided)
-- `final_report.md` — the complete Markdown report
+- `final_report.md` — the complete Markdown report with a 10-line case summary printed to stdout
+
+`--dicom` accepts a **single `.dcm` file** (single-slice) or a **folder of slices** (3D series). For series, slices are sorted by `InstanceNumber` or `ImagePositionPatient` and up to 16 slices are sampled for pixel statistics.
+
+Non-image DICOM objects (SR, SEG, RTSTRUCT, RTDOSE, …) are rejected with a clear error before any pixel data is touched.
 
 If `ANTHROPIC_API_KEY` is set, the pipeline automatically adds a narrative enrichment step (technique description, preliminary findings, conclusions) using `claude-haiku-4-5`. If the key is absent or the API is unreachable, that step is skipped silently and the report still generates.
 
@@ -74,6 +86,16 @@ The pipeline applies these rules deterministically — no model is involved in t
 | `stable` | Neither threshold reached |
 | `unknown` | Single scan — no comparison possible |
 
+Every analysis dict also carries `status_reason` and `status_explanation` that explain *why* the status is what it is (e.g. `"no_timeline"` — no Excel history was provided).
+
+## DICOM series support
+
+| Input | Behaviour |
+|-------|-----------|
+| Single `.dcm` file | `imaging.input_kind = "single"`, `is_3d = false` |
+| Folder of slices | Largest `SeriesInstanceUID` group selected, sorted by `InstanceNumber` → `ImagePositionPatient`, `is_3d = true` |
+| Non-image objects (SR, SEG, …) | Rejected with `ValueError` before pixel access |
+
 ## Project layout
 
 ```
@@ -101,6 +123,7 @@ data/
 tests/
   test_e2e_pipeline.py    # 18 end-to-end tests
   test_llm_enrichment.py  # 16 enrichment tests (fully mocked)
+  test_dicom_series.py    # 24 series / SR-rejection / status_reason tests
   test_compute_analysis.py
   test_generate_report.py
   test_parsers.py
@@ -110,7 +133,7 @@ tests/
 ## Tests
 
 ```bash
-make test          # runs all 195 tests
+make test          # runs all 219 tests
 pytest tests/ -v   # same with verbose output
 ```
 

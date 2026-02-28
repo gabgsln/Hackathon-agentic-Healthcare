@@ -39,7 +39,10 @@ clean:
 	find . -type d -name "htmlcov" -exec rm -rf {} +
 	rm -rf dist/ build/ *.egg-info/
 
-# --- Sample run ---
+# --- Demo (single DICOM file bundled with pydicom) ---
 demo:
-	@echo "Running demo report generation..."
-	python -m src.agents.orchestrator --sample data/samples/patient_001.xlsx
+	@python -c "import pydicom; import pathlib; p=pathlib.Path(pydicom.__file__).parent/'data'/'test_files'/'CT_small.dcm'; print('DICOM:', p)"
+	python -m src.pipelines.run_case \
+		--dicom "$$(python -c \"import pydicom, pathlib; print(pathlib.Path(pydicom.__file__).parent/'data'/'test_files'/'CT_small.dcm')\")" \
+		--case-id DEMO \
+		--out data/processed/DEMO/
