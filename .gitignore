@@ -1,3 +1,12 @@
+# --- Project-specific: never commit real patient data ---
+data/raw/
+data/processed/
+# Keep schema, manifests, and sample README tracked (but not sample data files)
+!data/schema/
+!data/manifests/
+!data/samples/README.md
+
+# --- Python standard ---
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

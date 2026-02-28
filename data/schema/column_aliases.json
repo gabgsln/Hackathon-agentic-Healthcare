@@ -1,0 +1,13 @@
+{
+  "date": ["Date", "DATE", "date_examen", "exam_date", "Date examen"],
+  "exam_type": ["Type", "type_examen", "Exam Type", "ExamType", "Modalité"],
+  "result": ["Résultat", "Result", "Valeur", "Value", "résultat"],
+  "unit": ["Unité", "Unit", "Unite", "unité"],
+  "reference_range": ["Référence", "Normal range", "Ref", "Norme"],
+  "notes": ["Notes", "Commentaire", "Comment", "Remarque"],
+  "physician": ["Médecin", "Doctor", "Physician", "Praticien"],
+  "size_mm": ["Taille", "Size", "Diamètre", "diameter_mm", "Diam (mm)"],
+  "nodule_id": ["Nodule", "ID nodule", "Nodule ID", "noduleID"],
+  "location": ["Localisation", "Location", "Lobe", "Segment"],
+  "density": ["Densité", "Density", "Type nodule"]
+}

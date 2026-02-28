@@ -1,0 +1,47 @@
+{
+  "version": "1.0.0",
+  "description": "Manifest des cas patients anonymisés pour le hackathon",
+  "created_at": "2026-02-28",
+  "cases": [
+    {
+      "patient_id": "patient_001",
+      "description": "Suivi nodule pulmonaire LSD — 4 examens sur 18 mois",
+      "excel_file": "data/samples/patient_001/patient_001_timeline.xlsx",
+      "images": [
+        "data/samples/patient_001/images/ct_2024_06.jpg",
+        "data/samples/patient_001/images/ct_2025_01.jpg"
+      ],
+      "report_type": "thorax_ct",
+      "ground_truth_report": null
+    },
+    {
+      "patient_id": "patient_002",
+      "description": "Bilan d'extension — CT-PET combiné",
+      "excel_file": "data/samples/patient_002/patient_002_timeline.xlsx",
+      "images": [
+        "data/samples/patient_002/images/ct_pet_2025_03.jpg"
+      ],
+      "report_type": "thorax_ct",
+      "ground_truth_report": null
+    },
+    {
+      "patient_id": "patient_003",
+      "description": "Surveillance post-traitement — régression nodulaire",
+      "excel_file": "data/samples/patient_003/patient_003_timeline.xlsx",
+      "images": [],
+      "report_type": "thorax_ct",
+      "ground_truth_report": null
+    },
+    {
+      "patient_id": "patient_004",
+      "description": "Cas complexe multi-nodules — évolution mixte",
+      "excel_file": "data/samples/patient_004/patient_004_timeline.xlsx",
+      "images": [
+        "data/samples/patient_004/images/ct_2025_02_axial.jpg",
+        "data/samples/patient_004/images/ct_2025_02_coronal.jpg"
+      ],
+      "report_type": "thorax_ct",
+      "ground_truth_report": null
+    }
+  ]
+}
