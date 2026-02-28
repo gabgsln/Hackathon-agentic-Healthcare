@@ -3,12 +3,9 @@
 Run with:
     python -m pytest tests/test_parsers.py -v
 """
-import math
 
-import pytest
 
 from src.pipelines.parsers import parse_lesion_sizes, split_report_sections
-
 
 # ===========================================================================
 # parse_lesion_sizes

@@ -4,8 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from src.core.config import settings
 from src.app.routes import generate_report, health
+from src.core.config import settings
 
 
 @asynccontextmanager

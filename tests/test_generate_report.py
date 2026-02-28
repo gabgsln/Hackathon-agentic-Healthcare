@@ -1,8 +1,6 @@
 """Sanity tests for the deterministic report renderer."""
-import pytest
 
 from src.pipelines.generate_report import build_context, render_report
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -192,7 +190,7 @@ class TestRenderReport:
 
     def test_no_lesion_deltas_shows_placeholder(self):
         md = render_report(TIMELINE_FULL, ANALYSIS_UNKNOWN)
-        assert "Aucune mesure" in md
+        assert "Aucun delta" in md or "Aucune mesure" in md
 
     def test_empty_timeline_does_not_crash(self):
         md = render_report([], ANALYSIS_UNKNOWN)

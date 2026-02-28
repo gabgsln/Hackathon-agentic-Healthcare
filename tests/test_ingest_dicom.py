@@ -4,15 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from src.pipelines.dicom_utils import (
     build_study_summary,
     group_by_accession,
     parse_dicom_date,
     read_dicom_metadata,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers — build fake pydicom.Dataset-like objects

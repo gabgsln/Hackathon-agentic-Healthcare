@@ -5,6 +5,10 @@ Applies RECIST-like rules (no LLM involved):
 - response    : any lesion decreases >= 30%
 - stable      : otherwise
 
+Two entry points:
+- compute_analysis(timeline, case_id)          — legacy Excel-timeline path
+- compute_analysis_from_vision(vision_output)  — imaging-first path (primary)
+
 Usage (CLI):
     python -m src.pipelines.compute_analysis \\
         --timeline data/processed/CASE_01_timeline.json \\
@@ -59,11 +63,11 @@ def compute_lesion_deltas(
         has_last = i < len(last_sizes)
 
         b: float | None = baseline_sizes[i] if has_baseline else None
-        l: float | None = last_sizes[i] if has_last else None
+        cur: float | None = last_sizes[i] if has_last else None
 
-        if b is not None and l is not None:
-            delta_mm: float | None = round(l - b, 2)
-            delta_pct: float | None = round((l - b) / b * 100, 1) if b > 0 else None
+        if b is not None and cur is not None:
+            delta_mm: float | None = round(cur - b, 2)
+            delta_pct: float | None = round((cur - b) / b * 100, 1) if b > 0 else None
         else:
             delta_mm = None
             delta_pct = None
@@ -71,14 +75,14 @@ def compute_lesion_deltas(
         entry: dict[str, Any] = {
             "lesion_index": i,
             "baseline_mm": b,
-            "last_mm": l,
+            "last_mm": cur,
             "delta_mm": delta_mm,
             "delta_pct": delta_pct,
             "status": _lesion_status(delta_mm, delta_pct),
         }
         if b is None:
             entry["note"] = "new lesion — absent at baseline"
-        if l is None:
+        if cur is None:
             entry["note"] = "lesion absent at last exam"
 
         deltas.append(entry)
@@ -304,6 +308,187 @@ def compute_analysis(
             "lesion_count_delta":     len(last_sizes) - len(baseline_sizes),
             "growth_rate_mm_per_day": compute_growth_rate(dom_base, dom_curr, time_delta_days),
             "data_completeness_score": compute_data_completeness_score(timeline),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Imaging-first analysis (primary entry point)
+# ---------------------------------------------------------------------------
+
+def compute_analysis_from_vision(
+    vision_output: dict[str, Any],
+    case_id: str = "",
+) -> dict[str, Any]:
+    """Run deterministic RECIST-like analysis on vision_tool output.
+
+    Lesion measurements come exclusively from DICOM + annotation px→mm conversion.
+    Excel is NOT used as a measurement source.
+
+    Args:
+        vision_output: Dict produced by src/tools/vision_tool.run_vision_tool().
+        case_id:       Optional identifier echoed into the output.
+
+    Returns:
+        Analysis dict compatible with the existing analysis JSON schema,
+        plus imaging-specific fields (calibration, warnings, per-study lesions).
+    """
+    studies: list[dict[str, Any]] = vision_output.get("studies", [])
+    warnings: list[str] = list(vision_output.get("warnings", []))
+    calibration: dict[str, Any] = vision_output.get("calibration", {})
+
+    if not studies:
+        return {
+            "case_id":        case_id,
+            "patient_id":     "",
+            "overall_status": "unknown",
+            "evidence": {
+                "rule_applied":         "unknown: no DICOM studies available",
+                "progression_triggers": [],
+                "response_triggers":    [],
+                "thresholds": {
+                    "progression_pct":    PROGRESSION_PCT_THRESHOLD,
+                    "progression_abs_mm": PROGRESSION_ABS_THRESHOLD,
+                    "response_pct":       RESPONSE_PCT_THRESHOLD,
+                },
+            },
+            "lesion_deltas":  [],
+            "baseline_study": {},
+            "last_study":     {},
+            "calibration":    calibration,
+            "warnings":       warnings,
+            "kpi": {
+                "sum_diameters_baseline_mm":   None,
+                "sum_diameters_current_mm":    None,
+                "sum_diameters_delta_pct":     None,
+                "dominant_lesion_baseline_mm": None,
+                "dominant_lesion_current_mm":  None,
+                "dominant_lesion_delta_pct":   None,
+                "lesion_count_baseline":       0,
+                "lesion_count_current":        0,
+                "lesion_count_delta":          0,
+                "growth_rate_mm_per_day":      None,
+                "data_completeness_score":     0.0,
+            },
+        }
+
+    # Sort studies by date (undated last)
+    def _sort_key(s: dict[str, Any]) -> str:
+        return s.get("study_date") or "9999-99-99"
+
+    sorted_studies = sorted(studies, key=_sort_key)
+
+    # Identify baseline (earliest with lesions) and last (most recent with lesions)
+    baseline_study: dict[str, Any] | None = None
+    last_study: dict[str, Any] | None = None
+
+    for s in sorted_studies:
+        if s.get("lesions"):
+            if baseline_study is None:
+                baseline_study = s
+            last_study = s
+
+    patient_id = next((s.get("patient_id", "") for s in sorted_studies if s.get("patient_id")), "")
+
+    # Single study → unknown (no comparison possible)
+    if baseline_study is None or last_study is None or baseline_study is last_study:
+        deltas: list[dict[str, Any]] = []
+        status = "unknown"
+        prog_idx: list[int] = []
+        resp_idx: list[int] = []
+        rule = "unknown: fewer than two studies have lesion measurements"
+    else:
+        # Match lesions by rank index (both sorted descending by long_axis_mm)
+        def _sorted_lesions(study: dict[str, Any]) -> list[dict[str, Any]]:
+            return sorted(
+                study.get("lesions", []),
+                key=lambda les: les.get("long_axis_mm") or 0,
+                reverse=True,
+            )
+
+        baseline_lesions = _sorted_lesions(baseline_study)
+        last_lesions     = _sorted_lesions(last_study)
+
+        baseline_sizes = [les["long_axis_mm"] for les in baseline_lesions if les.get("long_axis_mm")]
+        last_sizes     = [les["long_axis_mm"] for les in last_lesions     if les.get("long_axis_mm")]
+
+        deltas = compute_lesion_deltas(baseline_sizes, last_sizes)
+        status, prog_idx, resp_idx, rule = determine_overall_status(deltas)
+
+    # KPI computation
+    b_sizes = [
+        les["long_axis_mm"]
+        for les in (baseline_study or {}).get("lesions", [])
+        if les.get("long_axis_mm")
+    ]
+    l_sizes = [
+        les["long_axis_mm"]
+        for les in (last_study or {}).get("lesions", [])
+        if les.get("long_axis_mm")
+    ]
+
+    sum_base = compute_sum_diameters(b_sizes)
+    sum_curr = compute_sum_diameters(l_sizes)
+    dom_base = compute_dominant_lesion(b_sizes)
+    dom_curr = compute_dominant_lesion(l_sizes)
+
+    b_date = (baseline_study or {}).get("study_date")
+    l_date = (last_study or {}).get("study_date")
+    time_delta_days = _days_between(b_date, l_date)
+
+    # Build a minimal timeline-like structure for data_completeness_score
+    _pseudo_timeline = [
+        {
+            "study_date":      s.get("study_date"),
+            "lesion_sizes_mm": [les["long_axis_mm"] for les in s.get("lesions", []) if les.get("long_axis_mm")],
+            "report_sections": {},
+        }
+        for s in sorted_studies
+    ]
+
+    return {
+        "case_id":           case_id,
+        "patient_id":        patient_id,
+        "exam_count":        len(sorted_studies),
+        "first_exam_date":   sorted_studies[0].get("study_date") if sorted_studies else None,
+        "last_exam_date":    sorted_studies[-1].get("study_date") if sorted_studies else None,
+        "time_delta_days":   time_delta_days,
+        "baseline_study": {
+            "study_uid":  (baseline_study or {}).get("study_uid", ""),
+            "study_date": b_date,
+            "lesions":    (baseline_study or {}).get("lesions", []),
+        },
+        "last_study": {
+            "study_uid":  (last_study or {}).get("study_uid", ""),
+            "study_date": l_date,
+            "lesions":    (last_study or {}).get("lesions", []),
+        },
+        "lesion_deltas":  deltas,
+        "overall_status": status,
+        "evidence": {
+            "progression_triggers": prog_idx,
+            "response_triggers":    resp_idx,
+            "rule_applied":         rule,
+            "thresholds": {
+                "progression_pct":    PROGRESSION_PCT_THRESHOLD,
+                "progression_abs_mm": PROGRESSION_ABS_THRESHOLD,
+                "response_pct":       RESPONSE_PCT_THRESHOLD,
+            },
+        },
+        "calibration": calibration,
+        "warnings":    warnings,
+        "kpi": {
+            "sum_diameters_baseline_mm":   sum_base,
+            "sum_diameters_current_mm":    sum_curr,
+            "sum_diameters_delta_pct":     _pct_delta(sum_base, sum_curr),
+            "dominant_lesion_baseline_mm": dom_base,
+            "dominant_lesion_current_mm":  dom_curr,
+            "dominant_lesion_delta_pct":   _pct_delta(dom_base, dom_curr),
+            "lesion_count_baseline":       len(b_sizes),
+            "lesion_count_current":        len(l_sizes),
+            "lesion_count_delta":          len(l_sizes) - len(b_sizes),
+            "growth_rate_mm_per_day":      compute_growth_rate(dom_base, dom_curr, time_delta_days),
+            "data_completeness_score":     compute_data_completeness_score(_pseudo_timeline),
         },
     }
 

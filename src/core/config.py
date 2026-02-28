@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,11 @@ class Settings(BaseSettings):
 
     # Pipeline
     pipeline_version: str = "0.1.0"
+
+    # Orthanc DICOM server
+    orthanc_url: str = "http://10.0.1.215:8042"
+    orthanc_user: str = "unboxed"
+    orthanc_pass: str = "unboxed2026"
 
     @property
     def samples_dir(self) -> Path:

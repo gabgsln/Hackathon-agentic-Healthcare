@@ -1,3 +1,11 @@
+"""FastAPI routes for report generation.
+
+Imaging-first policy:
+  - DICOM files are MANDATORY. Requests without images → HTTP 400.
+  - Excel is optional. If provided, only patient/exam metadata is used
+    (PatientID, StudyDate, AccessionNumber) — lesion sizes are ignored.
+  - Lesion measurements come exclusively from DICOM + annotation JSON.
+"""
 import tempfile
 from pathlib import Path
 
@@ -7,9 +15,8 @@ from loguru import logger
 
 from src.agents.orchestrator import Orchestrator
 from src.core.config import settings
-from src.core.types import GeneratedReport, ReportRequest
+from src.core.types import ReportRequest
 from src.pipelines.ingest_excel import ingest_excel
-from src.pipelines.ingest_images import ingest_images
 from src.reporting.renderer import Renderer
 
 router = APIRouter()
@@ -20,62 +27,73 @@ async def generate_report(
     patient_id: str = Form(...),
     referring_physician: str = Form(default=""),
     output_format: str = Form(default="pdf"),
+    dicom_files: list[UploadFile] = File(default=[]),
     excel_file: UploadFile | None = File(default=None),
-    image_files: list[UploadFile] = File(default=[]),
+    annotations_json: str = Form(default=""),
 ):
-    """
-    Generate a structured medical report from patient data.
+    """Generate a structured medical report from DICOM images.
 
-    - **excel_file**: Excel file with patient timeline (optional)
-    - **image_files**: Medical images JPEG/PNG (optional, multiple)
+    - **dicom_files**: DICOM .dcm files — **MANDATORY** (at least one required)
+    - **excel_file**: Excel with patient metadata (optional; lesion sizes ignored)
+    - **annotations_json**: Lesion annotations as JSON string (pixel coords + series UID)
     - **output_format**: "pdf" | "markdown" | "json"
     """
+    # ── Images are mandatory — fail immediately if absent ────────────────────
+    if not dicom_files or not any(f.filename for f in dicom_files):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error":  "IMAGES_REQUIRED",
+                "detail": "DICOM images are mandatory for report generation.",
+            },
+        )
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
 
-        # Save uploaded files
-        excel_path = None
+        # ── Save DICOM files ──────────────────────────────────────────────────
+        dicom_dir = tmp / "dicom"
+        dicom_dir.mkdir()
+        dicom_paths: list[Path] = []
+        for dcm in dicom_files:
+            if dcm.filename:
+                p = dicom_dir / dcm.filename
+                p.write_bytes(await dcm.read())
+                dicom_paths.append(p)
+                logger.info(f"Received DICOM: {dcm.filename}")
+
+        # ── Excel: save for metadata extraction only — NO lesion sizes ────────
+        excel_path: Path | None = None
         if excel_file and excel_file.filename:
             excel_path = tmp / excel_file.filename
             excel_path.write_bytes(await excel_file.read())
-            logger.info(f"Received Excel: {excel_file.filename}")
+            logger.info(f"Received Excel (metadata only, lesion sizes ignored): {excel_file.filename}")
 
-        image_paths = []
-        for img in image_files:
-            if img.filename:
-                img_path = tmp / img.filename
-                img_path.write_bytes(await img.read())
-                image_paths.append(img_path)
-                logger.info(f"Received image: {img.filename}")
-
-        # Build request
+        # ── Build request ─────────────────────────────────────────────────────
         request = ReportRequest(
             patient_id=patient_id,
             excel_path=excel_path,
-            image_paths=image_paths,
+            image_paths=dicom_paths,
             referring_physician=referring_physician or None,
             output_format=output_format,
         )
 
         try:
-            # Ingest data
+            # Excel → timeline for patient/exam metadata ONLY
             timeline = None
             if excel_path:
                 timeline = ingest_excel(excel_path)
 
-            image_metadata = []
-            if image_paths:
-                image_metadata = ingest_images(image_paths)
-
-            # Run agent
+            # Run orchestrator (vision_tool is forced first inside orchestrator)
             orchestrator = Orchestrator()
-            report: GeneratedReport = await orchestrator.run(
+            report = await orchestrator.run(
                 request=request,
                 timeline=timeline,
-                images=image_metadata,
+                dicom_paths=dicom_paths,
+                annotations_json=annotations_json or None,
             )
 
-            # Render output
+            # ── Render output ─────────────────────────────────────────────────
             renderer = Renderer()
             output_path = tmp / f"report_{patient_id}"
 
@@ -97,9 +115,18 @@ async def generate_report(
                     filename=f"report_{patient_id}.pdf",
                 )
 
-        except Exception as e:
+        except ValueError as exc:
+            # Structured errors from vision_tool (MEASUREMENTS_REQUIRED, etc.)
+            import json as _json
+            try:
+                detail = _json.loads(str(exc))
+            except Exception:
+                detail = str(exc)
+            raise HTTPException(status_code=422, detail=detail) from exc
+
+        except Exception as exc:
             logger.exception(f"Report generation failed for {patient_id}")
-            raise HTTPException(status_code=500, detail=str(e)) from e
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/generate/from-manifest")
@@ -116,19 +143,31 @@ async def generate_from_manifest(patient_id: str):
     if not case:
         raise HTTPException(status_code=404, detail=f"Patient {patient_id} not in manifest")
 
-    excel_path = Path(case["excel_file"]) if case.get("excel_file") else None
-    image_paths = [Path(p) for p in case.get("images", [])]
+    dicom_paths = [Path(p) for p in case.get("dicom_files", [])]
+    if not dicom_paths:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error":  "IMAGES_REQUIRED",
+                "detail": "No DICOM files configured for this case in the manifest.",
+            },
+        )
 
+    excel_path = Path(case["excel_file"]) if case.get("excel_file") else None
     request = ReportRequest(
         patient_id=patient_id,
         excel_path=excel_path,
-        image_paths=image_paths,
+        image_paths=dicom_paths,
         output_format="json",
     )
 
     timeline = ingest_excel(excel_path) if excel_path and excel_path.exists() else None
-    image_metadata = ingest_images(image_paths) if image_paths else []
 
     orchestrator = Orchestrator()
-    report = await orchestrator.run(request=request, timeline=timeline, images=image_metadata)
+    report = await orchestrator.run(
+        request=request,
+        timeline=timeline,
+        dicom_paths=dicom_paths,
+        annotations_json=case.get("annotations_json"),
+    )
     return report.model_dump(mode="json")

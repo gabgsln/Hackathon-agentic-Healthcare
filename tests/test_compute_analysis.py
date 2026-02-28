@@ -1,10 +1,7 @@
 """Tests for src/pipelines/compute_analysis.py — deterministic rules."""
-import pytest
 
 from src.pipelines.compute_analysis import (
-    PROGRESSION_ABS_THRESHOLD,
     PROGRESSION_PCT_THRESHOLD,
-    RESPONSE_PCT_THRESHOLD,
     _days_between,
     _lesion_status,
     _pct_delta,
@@ -16,7 +13,6 @@ from src.pipelines.compute_analysis import (
     compute_sum_diameters,
     determine_overall_status,
 )
-
 
 # ===========================================================================
 # _lesion_status

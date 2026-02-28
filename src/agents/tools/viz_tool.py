@@ -1,5 +1,4 @@
 """Viz tool: generate Plotly charts from patient timeline data."""
-import json
 from pathlib import Path
 
 import plotly.graph_objects as go

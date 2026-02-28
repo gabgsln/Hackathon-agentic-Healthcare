@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CaseAnalysis",
+  "description": "Validated output of the deterministic analysis pipeline.",
+  "type": "object",
+  "required": ["case_id", "overall_status", "evidence", "kpi", "dicom"],
+  "additionalProperties": true,
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique case identifier."
+    },
+    "patient_id": {
+      "type": "string"
+    },
+    "overall_status": {
+      "type": "string",
+      "enum": ["progression", "response", "stable", "unknown"],
+      "description": "RECIST-like overall classification."
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["rule_applied", "thresholds"],
+      "additionalProperties": true,
+      "properties": {
+        "rule_applied": { "type": "string" },
+        "progression_triggers": {
+          "type": "array",
+          "items": { "type": "integer" }
+        },
+        "response_triggers": {
+          "type": "array",
+          "items": { "type": "integer" }
+        },
+        "thresholds": {
+          "type": "object",
+          "required": ["progression_pct", "progression_abs_mm", "response_pct"],
+          "properties": {
+            "progression_pct":    { "type": "number" },
+            "progression_abs_mm": { "type": "number" },
+            "response_pct":       { "type": "number" }
+          }
+        }
+      }
+    },
+    "kpi": {
+      "type": "object",
+      "required": ["data_completeness_score"],
+      "additionalProperties": true,
+      "properties": {
+        "sum_diameters_baseline_mm":   { "type": ["number", "null"] },
+        "sum_diameters_current_mm":    { "type": ["number", "null"] },
+        "sum_diameters_delta_pct":     { "type": ["number", "null"] },
+        "dominant_lesion_baseline_mm": { "type": ["number", "null"] },
+        "dominant_lesion_current_mm":  { "type": ["number", "null"] },
+        "dominant_lesion_delta_pct":   { "type": ["number", "null"] },
+        "lesion_count_baseline":       { "type": "integer" },
+        "lesion_count_current":        { "type": "integer" },
+        "lesion_count_delta":          { "type": "integer" },
+        "growth_rate_mm_per_day":      { "type": ["number", "null"] },
+        "data_completeness_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "dicom": {
+      "type": "object",
+      "required": ["metadata", "image_stats"],
+      "description": "DICOM analysis block — mandatory for all validated pipelines.",
+      "properties": {
+        "metadata": {
+          "type": "object",
+          "required": [
+            "PatientID",
+            "StudyInstanceUID",
+            "SeriesInstanceUID",
+            "Modality",
+            "StudyDate"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "PatientID":          { "type": "string" },
+            "StudyInstanceUID":   { "type": "string" },
+            "SeriesInstanceUID":  { "type": "string" },
+            "Modality":           { "type": "string" },
+            "BodyPartExamined":   { "type": ["string", "null"] },
+            "StudyDate":          { "type": ["string", "null"] },
+            "SeriesDescription":  { "type": ["string", "null"] },
+            "InstanceNumber":     { "type": ["integer", "null"] },
+            "PixelSpacing": {
+              "oneOf": [
+                { "type": "null" },
+                { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }
+              ]
+            },
+            "SliceThickness":     { "type": ["number", "null"] }
+          }
+        },
+        "image_stats": {
+          "type": "object",
+          "required": ["shape", "dtype", "min", "max", "mean", "std", "data_consistency_score"],
+          "additionalProperties": true,
+          "properties": {
+            "shape": {
+              "type": "array",
+              "items": { "type": "integer" },
+              "minItems": 2
+            },
+            "dtype":  { "type": "string" },
+            "min":    { "type": "number" },
+            "max":    { "type": "number" },
+            "mean":   { "type": "number" },
+            "std":    { "type": "number" },
+            "data_consistency_score": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          }
+        }
+      }
+    },
+    "lesion_deltas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["lesion_index", "status"],
+        "properties": {
+          "lesion_index": { "type": "integer" },
+          "baseline_mm":  { "type": ["number", "null"] },
+          "last_mm":      { "type": ["number", "null"] },
+          "delta_mm":     { "type": ["number", "null"] },
+          "delta_pct":    { "type": ["number", "null"] },
+          "status":       { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -46,38 +46,67 @@ def build_context(
     timeline: list[dict[str, Any]],
     analysis: dict[str, Any],
 ) -> dict[str, Any]:
-    """Assemble the Jinja2 template context from pipeline data."""
+    """Assemble the Jinja2 template context from pipeline data.
+
+    Supports both:
+    - Legacy Excel-timeline analysis (baseline_exam / last_exam keys)
+    - Imaging-first analysis  (baseline_study / last_study keys + studies list)
+    """
+    def _norm_exam(d: dict) -> dict:
+        """Ensure 'study_date' key is always present (legacy path uses 'date')."""
+        d = d or {}
+        if "study_date" not in d and "date" in d:
+            d = {**d, "study_date": d["date"]}
+        if "study_date" not in d:
+            d = {**d, "study_date": None}
+        return d
+
+    # Unify baseline/last regardless of which analysis path produced the data
+    baseline = _norm_exam(analysis.get("baseline_exam") or analysis.get("baseline_study") or {})
+    last     = _norm_exam(analysis.get("last_exam")     or analysis.get("last_study")     or {})
+
+    _default_evidence = {
+        "rule_applied": "N/A",
+        "progression_triggers": [],
+        "response_triggers": [],
+        "thresholds": {
+            "progression_pct": 20.0,
+            "progression_abs_mm": 5.0,
+            "response_pct": 30.0,
+        },
+    }
+
     return {
         # ── meta ──────────────────────────────────────────────────────────
-        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "generated_at":    datetime.now().strftime("%Y-%m-%d %H:%M"),
         "pipeline_version": PIPELINE_VERSION,
-        # ── patient / exam summary ─────────────────────────────────────────
-        "patient_id": analysis.get("patient_id", ""),
-        "exam_count": analysis.get("exam_count", len(timeline)),
+        # ── patient / exam summary ────────────────────────────────────────
+        "patient_id":      analysis.get("patient_id", ""),
+        "exam_count":      analysis.get("exam_count", len(timeline)),
         "first_exam_date": analysis.get("first_exam_date"),
-        "last_exam_date": analysis.get("last_exam_date"),
+        "last_exam_date":  analysis.get("last_exam_date"),
         "time_delta_days": analysis.get("time_delta_days"),
-        # ── analysis results ───────────────────────────────────────────────
-        "overall_status": analysis.get("overall_status", "unknown"),
-        "lesion_deltas": analysis.get("lesion_deltas", []),
-        "baseline_exam": analysis.get("baseline_exam", {}),
-        "last_exam": analysis.get("last_exam", {}),
-        "evidence": analysis.get("evidence", {
-            "rule_applied": "N/A",
-            "progression_triggers": [],
-            "response_triggers": [],
-            "thresholds": {
-                "progression_pct": 20.0,
-                "progression_abs_mm": 5.0,
-                "response_pct": 30.0,
-            },
-        }),
-        # ── latest pseudo-report sections ─────────────────────────────────
+        # ── analysis results ──────────────────────────────────────────────
+        "overall_status":  analysis.get("overall_status", "unknown"),
+        "lesion_deltas":   analysis.get("lesion_deltas", []),
+        "baseline_exam":   baseline,  # legacy compat
+        "last_exam":       last,      # legacy compat
+        "baseline_study":  baseline,  # imaging-first
+        "last_study":      last,      # imaging-first
+        "evidence":        analysis.get("evidence", _default_evidence),
+        # ── imaging-first data ────────────────────────────────────────────
+        "studies":     analysis.get("studies",     []),
+        "calibration": analysis.get("calibration", {"method": "N/A", "pixel_spacing_mm": None}),
+        "warnings":    analysis.get("warnings",    []),
+        # ── DICOM analysis block (from dicom_analysis.py) ─────────────────
+        "dicom_metadata":    (analysis.get("dicom") or {}).get("metadata"),
+        "dicom_image_stats": (analysis.get("dicom") or {}).get("image_stats"),
+        # ── latest pseudo-report sections (from Excel if present) ─────────
         "latest_clinical_information": _latest_section(timeline, "clinical_information"),
-        "latest_study_technique": _latest_section(timeline, "study_technique"),
-        "latest_report": _latest_section(timeline, "report"),
-        "latest_conclusions": _latest_section(timeline, "conclusions"),
-        # ── KPIs (all keys always present; None when not computable) ───────
+        "latest_study_technique":      _latest_section(timeline, "study_technique"),
+        "latest_report":               _latest_section(timeline, "report"),
+        "latest_conclusions":          _latest_section(timeline, "conclusions"),
+        # ── KPIs (all keys always present; None when not computable) ──────
         "kpi": {
             "sum_diameters_baseline_mm":   analysis.get("kpi", {}).get("sum_diameters_baseline_mm"),
             "sum_diameters_current_mm":    analysis.get("kpi", {}).get("sum_diameters_current_mm"),

@@ -1,12 +1,12 @@
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ExamType(str, Enum):
+class ExamType(StrEnum):
     CT = "CT"
     PET = "PET"
     RX = "RX"
@@ -16,13 +16,13 @@ class ExamType(str, Enum):
     OTHER = "OTHER"
 
 
-class Sex(str, Enum):
+class Sex(StrEnum):
     M = "M"
     F = "F"
     OTHER = "OTHER"
 
 
-class SmokingStatus(str, Enum):
+class SmokingStatus(StrEnum):
     NEVER = "Non-fumeur"
     FORMER = "Ex-fumeur"
     CURRENT = "Fumeur"

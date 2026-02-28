@@ -35,7 +35,6 @@ import pandas as pd
 
 from src.pipelines.parsers import parse_lesion_sizes, split_report_sections
 
-
 # ---------------------------------------------------------------------------
 # Column discovery helpers
 # ---------------------------------------------------------------------------

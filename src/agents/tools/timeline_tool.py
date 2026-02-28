@@ -1,5 +1,4 @@
 """Timeline tool: summarize patient evolution and trends from structured data."""
-import json
 
 from loguru import logger
 
