@@ -478,7 +478,10 @@ def _build_analysis_dict(
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m src.pipelines.dicom_analysis",
-        description="Extract DICOM metadata + pixel statistics, validate against schema. Accepts a .dcm file or a folder of slices.",
+        description=(
+            "Extract DICOM metadata + pixel statistics, validate against schema. "
+            "Accepts a .dcm file or a folder of slices."
+        ),
     )
     p.add_argument("--dicom", required=True, type=Path, help="Path to a .dcm file or a folder of DICOM slices (REQUIRED).")
     p.add_argument("--case-id", default="", dest="case_id", help="Case identifier (default: file/folder name).")

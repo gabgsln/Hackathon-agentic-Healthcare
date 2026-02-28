@@ -52,13 +52,18 @@ def _print_summary(
     print(sep)
     print(f"  Case      : {analysis.get('case_id', '?'):<20}  Patient : {meta.get('PatientID', '?')}")
     print(f"  Status    : {analysis.get('overall_status', '?').upper():<20}  Reason  : {analysis.get('status_reason', '?')}")
-    print(f"  Input     : {img.get('input_kind', '?'):<10}  Slices  : {img.get('n_slices', '?'):<6}  3D : {'Yes' if img.get('is_3d') else 'No'}")
+    is_3d = "Yes" if img.get("is_3d") else "No"
+    print(f"  Input     : {img.get('input_kind', '?'):<10}  Slices  : {img.get('n_slices', '?'):<6}  3D : {is_3d}")
     modality   = meta.get("Modality")        or "?"
     body_part  = meta.get("BodyPartExamined") or "?"
     study_date = meta.get("StudyDate")        or "?"
     print(f"  Modality  : {modality:<10}  Part    : {body_part:<10}  Date : {study_date}")
-    print(f"  HU range  : [{stats.get('min', '?')}, {stats.get('max', '?')}]   mean={stats.get('mean', '?')}  std={stats.get('std', '?')}")
-    print(f"  Consist.  : {stats.get('data_consistency_score', '?'):.2f}               Completeness : {kpi.get('data_completeness_score', '?')}%")
+    hu_min = stats.get("min", "?")
+    hu_max = stats.get("max", "?")
+    print(f"  HU range  : [{hu_min}, {hu_max}]   mean={stats.get('mean', '?')}  std={stats.get('std', '?')}")
+    completeness = kpi.get("data_completeness_score", "?")
+    consist = stats.get("data_consistency_score", 0.0)
+    print(f"  Consist.  : {consist:.2f}               Completeness : {completeness}%")
     print(f"  LLM       : {'enriched' if analysis.get('llm_enriched') else 'skipped'}")
     print(f"  Timeline  : {len(timeline)} exam(s)" if timeline else "  Timeline  : none")
     print(sep)
