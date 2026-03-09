@@ -1,4 +1,4 @@
-# Medical Report Pipeline
+# Medical Report Pipeline Hackathon 2026
 
 A pipeline for generating structured radiology reports from DICOM scans and patient history. It combines deterministic image analysis with an optional LLM enrichment step to produce complete, traceable reports.
 
